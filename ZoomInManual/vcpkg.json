@@ -1,0 +1,9 @@
+   {
+     "dependencies": [
+       { "name": "glad", "features": [ "gl-api-33" ] },
+       "glm",
+       "assimp",
+       "nlohmann-json",
+       "stb"
+     ]
+   }
