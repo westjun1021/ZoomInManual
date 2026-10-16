@@ -1,0 +1,422 @@
+{
+  "EV-VEH-001": {
+    "name": "차량 외관",
+    "level": 0,
+    "category": "차체",
+    "hv": false,
+    "desc": "차 전체. 휠로 다가가면 차체(겉껍데기)가 반투명해지고 안쪽 부품이 보인다.",
+    "specs": { "차종": "현대 아이오닉 5 (저폴리 모델)", "길이": "약 4.66 m (모델 기준)" },
+    "cautions": ["고전압 계통 작업 전 시동을 끄고 스마트키를 차에서 멀리 둔다", "리프트는 지정된 들어올림 지점에만 댄다"],
+    "source": "Hyundai Ioniq 5 - Lowpoly"
+  },
+  "EV-FRM-001": {
+    "name": "바닥 프레임",
+    "level": 1,
+    "category": "섀시",
+    "hv": false,
+    "desc": "배터리팩 아래에 깔린 바닥판. 팩을 받치고 아래쪽 충격을 막는다.",
+    "specs": { "위치": "배터리팩 아래, 앞바퀴 뒤 ~ 구동 모터 앞" },
+    "cautions": ["팩을 내리기 전에 바닥판 고정 볼트를 먼저 푼다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-WHL-001": {
+    "name": "휠 어셈블리",
+    "level": 1,
+    "category": "섀시",
+    "hv": false,
+    "desc": "타이어와 림을 합친 바퀴. 4개(@FL 앞왼쪽, @FR 앞오른쪽, @RL 뒤왼쪽, @RR 뒤오른쪽).",
+    "specs": { "수량": "4" },
+    "cautions": ["휠 너트는 대각선 순서로 규정 토크까지 조인다"],
+    "source": "Hyundai Ioniq 5 - Lowpoly"
+  },
+  "EV-TIR-001": {
+    "name": "타이어",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "림에 끼운 고무 타이어. 휠마다 1개.",
+    "specs": { "규격": "(공개 자료로 입력)" },
+    "cautions": ["공기압은 운전석 문 안쪽에 붙은 표시값에 맞춘다"],
+    "source": "Hyundai Ioniq 5 - Lowpoly"
+  },
+  "EV-RIM-001": {
+    "name": "휠 림",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "타이어를 끼우는 금속 휠. 휠마다 1개.",
+    "specs": { "규격": "(공개 자료로 입력)" },
+    "cautions": [],
+    "source": "Hyundai Ioniq 5 - Lowpoly"
+  },
+  "EV-SUS-F01": {
+    "name": "앞 서스펜션·조향 장치",
+    "level": 1,
+    "category": "섀시",
+    "hv": false,
+    "desc": "앞 차축, 너클, 타이로드로 앞바퀴를 받치고 방향을 바꾼다.",
+    "specs": { "구성": "차축 빔, 킹핀, 너클, 타이로드, 조향 기어" },
+    "cautions": ["분해했다가 다시 조립하면 휠 얼라인먼트를 점검한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-AXB-F01": {
+    "name": "앞 차축 빔",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "좌우 너클을 잇는 앞 차축의 들보. 앞바퀴 하중을 받친다.",
+    "specs": { "위치": "앞바퀴 사이" },
+    "cautions": ["차축 고정 볼트를 풀기 전에 차를 리프트로 들어 앞바퀴 하중을 뺀다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-KNU-F01": {
+    "name": "조향 너클",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "허브를 받치고 킹핀을 축으로 돌아 앞바퀴 방향을 바꾼다. 좌우 2개(@L, @R).",
+    "specs": { "수량": "2", "구성": "너클 지지대, 너클 암, 와셔" },
+    "cautions": ["너클을 떼었다가 조립하면 휠 얼라인먼트를 점검한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-KPN-F01": {
+    "name": "킹핀",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "너클이 도는 축. 핸들을 돌리면 앞바퀴가 이 축을 중심으로 돈다. 좌우 2개(@L, @R).",
+    "specs": { "수량": "2" },
+    "cautions": ["킹핀 유격이 크면 주행 중 핸들이 떨린다 — 정기 점검 때 유격을 잰다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-HUB-F01": {
+    "name": "허브·스핀들",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "앞바퀴가 끼워져 도는 축과 베어링 자리. 좌우 2개(@L, @R).",
+    "specs": { "수량": "2" },
+    "cautions": ["바퀴를 돌렸을 때 베어링에서 소리가 나면 허브를 점검한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-TRD-F01": {
+    "name": "타이로드",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "조향 기어의 움직임을 너클에 전해 앞바퀴를 돌린다. 양 끝 볼 조인트 포함. 좌우 2개(@L, @R).",
+    "specs": { "수량": "2", "구성": "타이로드 + 볼 조인트" },
+    "cautions": ["타이로드 길이를 바꾸면 토(toe) 값이 바뀐다 — 교체 뒤 얼라인먼트를 점검한다", "볼 조인트 고무 부트가 찢어졌는지 확인한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-STG-F01": {
+    "name": "조향 기어",
+    "level": 2,
+    "category": "섀시",
+    "hv": false,
+    "desc": "핸들 회전을 좌우 타이로드의 움직임으로 바꾼다.",
+    "specs": {},
+    "cautions": ["조향 기어를 떼기 전에 핸들을 가운데에 고정한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-AUX-001": {
+    "name": "12V 보조 배터리",
+    "level": 1,
+    "category": "전장",
+    "hv": false,
+    "desc": "조명·제어기 같은 저전압 장치에 전원을 주는 배터리.",
+    "specs": { "전압": "12 V" },
+    "cautions": ["고전압 계통 작업 전에 12V 배터리 (-) 단자를 먼저 분리한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-BP-001": {
+    "name": "고전압 배터리팩",
+    "level": 1,
+    "category": "배터리",
+    "hv": true,
+    "desc": "모듈 9개와 BMS·고전압 케이블·냉각 배관을 담은 구동용 배터리. 흰 커버(겉껍데기) 안에 모듈이 있다.",
+    "specs": { "모듈 수": "9", "셀 수": "270 (파우치형)", "정격 전압": "(공개 자료로 입력)", "용량": "(공개 자료로 입력)" },
+    "cautions": ["서비스 플러그(EV-MSD-001) 분리 후 대기", "절연 장갑 착용", "작업 전 전압계로 0 V 확인"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-BPT-001": {
+    "name": "배터리 하부 트레이",
+    "level": 2,
+    "category": "배터리",
+    "hv": false,
+    "desc": "모듈을 올려 고정하는 팩 아래쪽 판.",
+    "specs": {},
+    "cautions": ["팩을 내릴 때는 전용 리프트로 트레이 전체를 받친다"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-BMS-001": {
+    "name": "BMS(배터리 제어 모듈)",
+    "level": 2,
+    "category": "배터리",
+    "hv": true,
+    "desc": "셀 전압과 온도를 재고 충전·방전을 관리하는 제어기(모델 이름 BECM).",
+    "specs": { "기능": "셀 전압·온도 감시, 충방전 제어" },
+    "cautions": ["커넥터를 뺄 때는 정전기 방지 손목띠를 찬다"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-HVC-001": {
+    "name": "고전압 케이블·커넥터",
+    "level": 2,
+    "category": "배터리",
+    "hv": true,
+    "desc": "모듈과 차량을 잇는 주황색 고전압 배선과 앞쪽 커넥터.",
+    "specs": { "색": "주황 (고전압 표시)" },
+    "cautions": ["전원이 차단되기 전까지 주황색 배선을 만지지 않는다", "분리한 커넥터에는 절연 캡을 씌운다"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-MSD-001": {
+    "name": "서비스 플러그",
+    "level": 2,
+    "category": "배터리",
+    "hv": true,
+    "desc": "팩 안의 고전압 회로를 끊는 플러그. 정비를 시작할 때 가장 먼저 분리한다.",
+    "specs": { "위치": "배터리팩 윗면 (빨간 버튼·주황 틀)" },
+    "cautions": ["분리한 플러그는 작업자가 직접 보관해 다른 사람이 다시 꽂지 못하게 한다"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-CLT-001": {
+    "name": "냉각수 배관",
+    "level": 2,
+    "category": "배터리",
+    "hv": false,
+    "desc": "모듈을 식히는 냉각수가 흐르는 파란 배관과 포트.",
+    "specs": {},
+    "cautions": ["배관을 분리하기 전에 냉각수를 받아 낼 통을 준비한다"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-BM-12S": {
+    "name": "배터리 모듈",
+    "level": 2,
+    "category": "배터리",
+    "hv": true,
+    "desc": "셀을 묶은 단위. 팩 안에 9개(@01~@09).",
+    "specs": { "셀 수": "16개(@01, @07) 또는 34개(나머지 7개)" },
+    "cautions": ["단자에 절연 캡을 씌운 뒤 이동"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-CELL-POUCH": {
+    "name": "배터리 셀",
+    "level": 3,
+    "category": "배터리",
+    "hv": true,
+    "desc": "파우치형 리튬이온 셀. 팩 전체에 270개.",
+    "specs": { "형태": "파우치형", "공칭 전압": "(공개 자료로 입력)" },
+    "cautions": ["부풀거나 손상된 셀은 따로 격리해 보관한다"],
+    "source": "Gen 1 Chevy Volt Battery"
+  },
+  "EV-DU-R01": {
+    "name": "후륜 구동 유닛",
+    "level": 1,
+    "category": "구동",
+    "hv": true,
+    "desc": "구동 모터·감속기·드라이브 샤프트로 뒷바퀴를 돌린다.",
+    "specs": { "구성": "구동 모터, 감속기, 드라이브 샤프트 2개" },
+    "cautions": ["고전압 케이블을 분리한 뒤 작업한다", "유닛을 내릴 때는 잭으로 받친다"],
+    "source": "Car Inner Frame with Differential Gear + Electric Motor"
+  },
+  "EV-MOT-R01": {
+    "name": "구동 모터",
+    "level": 2,
+    "category": "구동",
+    "hv": true,
+    "desc": "고전압 전기로 회전력을 만드는 모터.",
+    "specs": { "출력": "(공개 자료로 입력)" },
+    "cautions": ["단자대(EV-MTB-001) 전압이 0 V인지 확인한 뒤 분해한다"],
+    "source": "Electric Motor"
+  },
+  "EV-MHS-001": {
+    "name": "모터 하우징",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "모터를 감싸는 몸체(단자함·다리 포함).",
+    "specs": {},
+    "cautions": [],
+    "source": "Electric Motor"
+  },
+  "EV-MSF-001": {
+    "name": "모터 축",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "모터의 회전을 감속기로 전하는 축.",
+    "specs": {},
+    "cautions": ["축 끝이 상하지 않게 보호 캡을 씌운다"],
+    "source": "Electric Motor"
+  },
+  "EV-MFC-001": {
+    "name": "모터 팬 커버",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "뒤쪽 냉각 팬을 덮는 통풍 그릴.",
+    "specs": {},
+    "cautions": [],
+    "source": "Electric Motor"
+  },
+  "EV-MTB-001": {
+    "name": "모터 단자대",
+    "level": 3,
+    "category": "구동",
+    "hv": true,
+    "desc": "고전압 케이블이 모터에 연결되는 단자 블록.",
+    "specs": {},
+    "cautions": ["절연 공구를 쓴다"],
+    "source": "Electric Motor"
+  },
+  "EV-MNP-001": {
+    "name": "모터 명판",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "모터 형식과 정격이 적힌 판. 부품을 주문할 때 확인한다.",
+    "specs": {},
+    "cautions": [],
+    "source": "Electric Motor"
+  },
+  "EV-MBT-001": {
+    "name": "엔드 커버 볼트",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "모터 끝 덮개를 고정하는 볼트. 4개(@1~@4).",
+    "specs": { "수량": "4" },
+    "cautions": ["다시 조일 때 대각선 순서로 규정 토크를 지킨다"],
+    "source": "Electric Motor"
+  },
+  "EV-MBT-002": {
+    "name": "단자함 덮개 나사",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "모터 단자함 덮개를 고정하는 나사. 4개(@1~@4). 풀면 고전압 단자대가 드러난다.",
+    "specs": { "수량": "4" },
+    "cautions": ["풀기 전에 고전압을 차단하고 단자대 전압이 0 V인지 확인한다"],
+    "source": "Electric Motor"
+  },
+  "EV-RDG-R01": {
+    "name": "감속기",
+    "level": 2,
+    "category": "구동",
+    "hv": false,
+    "desc": "모터 회전을 줄이고 힘을 키워 좌우 드라이브 샤프트로 나눈다(디퍼렌셜 포함).",
+    "specs": { "구성": "큰·작은 베벨 기어, 출력축, 입력 암, 십자 부품, 요동축, 와셔, 볼트, 고정 블록", "모델 원본": "1to1 with dwell time III (베벨 기어 기구)" },
+    "cautions": ["오일이 새는지 점검한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-BVL-R01": {
+    "name": "큰 베벨 기어",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "이빨 51개 베벨 기어. 작은 베벨 기어와 맞물려 회전 방향을 90° 바꾼다.",
+    "specs": { "잇수": "51", "원본 이름": "bevel_51_static" },
+    "cautions": ["기어 이빨이 깨지거나 닳았는지 확인한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-BVS-R01": {
+    "name": "작은 베벨 기어",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "이빨 17개 베벨 기어. 2개(@1, @2).",
+    "specs": { "잇수": "17", "수량": "2", "원본 이름": "bevel_17_loose, bevel_17_attached" },
+    "cautions": ["큰 베벨 기어와 맞물리는 틈(백래시)을 함께 점검한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-OSF-R01": {
+    "name": "출력축",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "기어 묶음의 회전을 밖으로 내보내는 축.",
+    "specs": { "원본 이름": "output_shaft" },
+    "cautions": ["축 둘레 오일 실에서 기름이 새는지 확인한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-IAR-R01": {
+    "name": "입력 암",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "회전을 받아 기어 묶음을 돌리는 팔.",
+    "specs": { "원본 이름": "input_arm" },
+    "cautions": [],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-CRS-R01": {
+    "name": "십자 부품",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "기어 묶음 가운데의 십자 모양 연결 부품(두 조각).",
+    "specs": { "원본 이름": "cross1, cross2" },
+    "cautions": [],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-OSC-R01": {
+    "name": "요동축",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "작은 베벨 기어를 끼운 축. 키가 기어를 헛돌지 않게 잡는다.",
+    "specs": { "원본 이름": "oscillating_shaft, keyway" },
+    "cautions": [],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-WSH-R01": {
+    "name": "와셔",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "요동축 양 끝의 와셔. 2개(@1, @2).",
+    "specs": { "수량": "2", "원본 이름": "washer" },
+    "cautions": ["분해하면 새 와셔로 바꾼다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-RBT-R01": {
+    "name": "육각 구멍 볼트(1/8\")",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "십자 부품을 고정하는 볼트. 4개(@1~@4).",
+    "specs": { "수량": "4", "원본 이름": "allen_1_8x13_16" },
+    "cautions": ["육각 렌치로 규정 토크까지 조인다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-RBT-R02": {
+    "name": "육각 구멍 볼트(M5)",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "요동축을 고정하는 볼트. 2개(@1, @2).",
+    "specs": { "수량": "2", "원본 이름": "allen_M5_32x1_2" },
+    "cautions": ["육각 렌치로 규정 토크까지 조인다"],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-RBK-R01": {
+    "name": "고정 블록",
+    "level": 3,
+    "category": "구동",
+    "hv": false,
+    "desc": "기어 묶음을 받치는 고정 부품.",
+    "specs": { "원본 이름": "static" },
+    "cautions": [],
+    "source": "Car Inner Frame with Differential Gear"
+  },
+  "EV-DSH-001": {
+    "name": "드라이브 샤프트",
+    "level": 2,
+    "category": "구동",
+    "hv": false,
+    "desc": "감속기와 뒷바퀴를 잇는 축. 좌우 2개(@L, @R).",
+    "specs": {},
+    "cautions": ["고무 부트가 찢어졌는지 확인한다"],
+    "source": "Car Inner Frame with Differential Gear"
+  }
+}

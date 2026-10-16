@@ -4,6 +4,8 @@
 
 #pragma once
 #include "GLView.h"
+#include "InfoList.h"
+#include "PartPreview.h"
 
 // CZoomInManualDlg 대화 상자
 class CZoomInManualDlg : public CDialogEx
@@ -31,6 +33,12 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 	CGLView m_glView;                 // 화면 ①: OpenGL 3D 뷰
+	CInfoList m_infoList;             // 화면 ②: 부품 정보·재고
+	CPartPreview m_preview;
+	afx_msg void OnBnClickedSearch();
+	void RunSearch();
+
+	afx_msg LRESULT OnPartSelected(WPARAM wParam, LPARAM lParam);
 	void LayoutGlView();              // 창 크기가 바뀌면 3D 뷰 위치를 맞춤
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	virtual BOOL PreTranslateMessage(MSG* pMsg);

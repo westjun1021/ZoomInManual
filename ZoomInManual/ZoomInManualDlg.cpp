@@ -1,5 +1,4 @@
-﻿
-// ZoomInManualDlg.cpp: 구현 파일
+﻿// ZoomInManualDlg.cpp: 구현 파일
 //
 
 #include "pch.h"
@@ -27,15 +26,15 @@ class CAboutDlg : public CDialogEx
 public:
 	CAboutDlg();
 
-// 대화 상자 데이터입니다.
+	// 대화 상자 데이터입니다.
 #ifdef AFX_DESIGN_TIME
 	enum { IDD = IDD_ABOUTBOX };
 #endif
 
-	protected:
+protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 지원입니다.
 
-// 구현입니다.
+	// 구현입니다.
 protected:
 	DECLARE_MESSAGE_MAP()
 };
@@ -73,6 +72,8 @@ BEGIN_MESSAGE_MAP(CZoomInManualDlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_WM_SIZE()
+	ON_MESSAGE(WM_ZOOMIN_PART_SELECTED, &CZoomInManualDlg::OnPartSelected)
+	ON_BN_CLICKED(IDC_BTN_SEARCH, &CZoomInManualDlg::OnBnClickedSearch)
 END_MESSAGE_MAP()
 
 
@@ -108,7 +109,7 @@ BOOL CZoomInManualDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 작은 아이콘을 설정합니다.
 
 	// TODO: 여기에 추가 초기화 작업을 추가합니다.
-	 
+
 	// 창 크기 조절 테두리·최대화 버튼을 켜고,
 	// 대화상자가 자식 창(3D 뷰) 위를 덮어 그리지 않게 한다(깜빡임 방지).
 	ModifyStyle(0, WS_THICKFRAME | WS_MAXIMIZEBOX | WS_CLIPCHILDREN, SWP_FRAMECHANGED);
@@ -123,6 +124,12 @@ BOOL CZoomInManualDlg::OnInitDialog()
 		m_glView.Create(this, rc, kGlViewId);
 		SetWindowText(_T("줌인 매뉴얼 - ") + m_glView.GetGlInfo());
 	}
+
+	m_infoList.SubclassDlgItem(IDC_LIST_INFO, this);
+	m_infoList.Setup();
+
+	m_preview.CreateInPanel(this, IDC_EDIT_SEARCH, IDC_BTN_SEARCH, IDC_TREE_PARTS);
+	m_glView.AttachPreview(&m_preview);
 
 	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
 }
@@ -192,10 +199,19 @@ void CZoomInManualDlg::OnSize(UINT nType, int cx, int cy)
 {
 	CDialogEx::OnSize(nType, cx, cy);
 	LayoutGlView();
+	m_preview.Relayout();   // ③ 칸(부품 이미지·검색 칸·[검색] 단추)을 ③ 그룹 상자의 새 자리에 맞춘다
 }
 
 BOOL CZoomInManualDlg::PreTranslateMessage(MSG* pMsg)
 {
+	// 엔터·ESC: 검색 칸에서 엔터 = [검색] 단추, 그 밖의 엔터·ESC 로는 창이 닫히지 않게(닫기는 X 버튼)
+	if (pMsg->message == WM_KEYDOWN && (pMsg->wParam == VK_RETURN || pMsg->wParam == VK_ESCAPE))
+	{
+		if (pMsg->wParam == VK_RETURN && ::GetFocus() == ::GetDlgItem(m_hWnd, IDC_EDIT_SEARCH))
+			RunSearch();          // 검색 칸에서 엔터 = [검색] 단추
+		return TRUE;              // 그 밖의 엔터·ESC 로는 창이 닫히지 않게
+	}
+
 	// 마우스 휠은 '키보드 포커스가 있는 창'으로 가기 때문에,
 	// 커서가 3D 뷰 위에 있으면 3D 뷰로 직접 보내 준다.
 	if (pMsg->message == WM_MOUSEWHEEL && m_glView.GetSafeHwnd())
@@ -210,4 +226,22 @@ BOOL CZoomInManualDlg::PreTranslateMessage(MSG* pMsg)
 		}
 	}
 	return CDialogEx::PreTranslateMessage(pMsg);
+}
+
+LRESULT CZoomInManualDlg::OnPartSelected(WPARAM /*wParam*/, LPARAM /*lParam*/)
+{
+	m_infoList.ShowPart(m_glView.GetSelectedPart(), m_glView.GetPartDB());
+	return 0;
+}
+
+void CZoomInManualDlg::OnBnClickedSearch()
+{
+	RunSearch();
+}
+
+void CZoomInManualDlg::RunSearch()
+{
+	CString query;
+	GetDlgItemText(IDC_EDIT_SEARCH, query);
+	m_glView.SearchNext(query);   // 맞는 부품으로 이동(같은 검색어로 다시 하면 다음 부품). 결과는 ③ 맨 아래 한 줄에
 }
