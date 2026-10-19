@@ -1,7 +1,9 @@
 ﻿// PartPreview.cpp
 #include "pch.h"
 #include "PartPreview.h"
+#include "UiTheme.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -14,16 +16,6 @@ namespace
     constexpr float kResumeSeconds = 2.5f;         // 끌기를 멈추고 다시 돌기까지
     constexpr float kFrameSeconds = 1.0f / 30.0f;  // 돌 때 새 그림 간격(약 30fps)
     constexpr float kDegreesPerPixel = 0.5f;       // 끌기 1픽셀 = 0.5°
-
-    const COLORREF kTitleNormal = RGB(52, 60, 74);      // 위 띠: 보통 부품(짙은 회청색)
-    const COLORREF kTitleHighVoltage = RGB(230, 90, 0); // 위 띠: 고전압 부품(3D 강조색과 같은 주황)
-    const COLORREF kTitleIdle = RGB(120, 128, 140);     // 위 띠: 고른 부품 없음
-    const COLORREF kIdleBack = RGB(236, 239, 243);      // 그림이 없을 때 바탕(OpenGL 배경 위쪽과 비슷한 색)
-    const COLORREF kIdleText = RGB(110, 116, 128);
-    const COLORREF kStatusText = RGB(25, 45, 90);       // 검색 결과 글자
-    const COLORREF kHintText = RGB(85, 92, 105);        // 사용법 글자
-    const COLORREF kHalo = RGB(244, 246, 249);          // 글자 둘레(부품 위에 겹쳐도 읽히게)
-    const COLORREF kBorder = RGB(171, 173, 179);        // 테두리(편집 칸 테두리와 같은 색)
 
     float Clamp(float v, float lo, float hi)
     {
@@ -38,6 +30,7 @@ BEGIN_MESSAGE_MAP(CPartPreview, CWnd)
     ON_WM_LBUTTONUP()
     ON_WM_LBUTTONDBLCLK()
     ON_WM_MOUSEMOVE()
+    ON_WM_MOUSELEAVE()
     ON_WM_CAPTURECHANGED()
     ON_WM_SIZE()
     ON_MESSAGE(kDeferredLayout, &CPartPreview::OnDeferredLayout)
@@ -79,17 +72,18 @@ BOOL CPartPreview::CreateInPanel(CWnd* dialog, UINT searchEditId, UINT searchBut
 
     // 2) 크기는 대화상자 단위(DLU)로 정한다 → 글꼴·화면 배율이 달라도 리소스 편집기에서 그린 것과 같은 비율.
     //    한 줄 높이 14, [검색] 단추 너비 50, 간격 4 (Visual Studio 의 기본 단추·편집 칸 크기)
+    //    7주차: 검색 줄은 조금 넉넉하게(높이 30px·단추 64px 이상, 화면 배율대로)
     CRect unit(0, 0, 50, 14);
     ::MapDialogRect(dialog->GetSafeHwnd(), &unit);
     CRect spacing(0, 0, 4, 4);
     ::MapDialogRect(dialog->GetSafeHwnd(), &spacing);
-    m_rowHeight = unit.Height();
-    m_buttonWidth = unit.Width();
-    m_gap = spacing.Width();
+    m_rowHeight = std::max(static_cast<int>(unit.Height()), ui::Px(30));
+    m_buttonWidth = std::max(static_cast<int>(unit.Width()), ui::Px(64));
+    m_gap = std::max(static_cast<int>(spacing.Width()), ui::Px(6));
 
     // 3) 검색 칸: 비어 있을 때 흐린 글자로 보이는 안내(Windows 의 cue banner). 트리는 이제 안 쓴다(리소스에서 지워도 된다).
     if (edit)
-        edit->SendMessage(EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(_T("품번·이름 검색 (예: 모듈 03, msd)")));
+        edit->SendMessage(EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(_T("품번·이름·증상 검색 (예: 끽 소리)")));   // 7주차 3차: 칸에 다 들어가게 짧게
     if (tree)
     {
         tree->ShowWindow(SW_HIDE);
@@ -131,6 +125,8 @@ BOOL CPartPreview::CreateInPanel(CWnd* dialog, UINT searchEditId, UINT searchBut
     SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);   // 그룹 상자보다 위에
     EnsureFonts();
     ResetAngles();
+    // 6) 7주차: 대화상자 전체를 어두운 화면으로(그룹 상자 → 둥근 패널, 검색 칸·[검색] 단추, 제목 줄)
+    ui::ThemeDialog(m_dialog, m_edit, m_button);
     ApplyLayout();
     return TRUE;
 }
@@ -154,11 +150,18 @@ void CPartPreview::ApplyLayout()
         return;   // 너무 작으면 건드리지 않는다
 
     // 맨 아래 한 줄 = 검색 칸 + [검색] 단추(교수님 그림처럼 이미지 아래), 그 위 = 부품 이미지
+    // 검색 칸은 테두리 없이 줄 가운데에 놓고, 둘레(둥근 입력 칸 모양)는 대화상자 바탕이 그린다(ui::ThemeDialog)
     const CRect row(area.left, area.bottom - m_rowHeight, area.right, area.bottom);
+    const int buttonLeft = row.right - m_buttonWidth;
     if (m_button && ::IsWindow(m_button))
-        ::MoveWindow(m_button, row.right - m_buttonWidth, row.top, m_buttonWidth, m_rowHeight, TRUE);
+        ::MoveWindow(m_button, buttonLeft, row.top, m_buttonWidth, m_rowHeight, TRUE);
     if (m_edit && ::IsWindow(m_edit))
-        ::MoveWindow(m_edit, row.left, row.top, m_button ? row.Width() - m_buttonWidth - m_gap : row.Width(), m_rowHeight, TRUE);
+    {
+        const int frameRight = m_button ? buttonLeft - m_gap : row.right;
+        const int editHeight = std::min(ui::EditHeight(), m_rowHeight);
+        ::MoveWindow(m_edit, row.left + ui::Px(10), row.top + (m_rowHeight - editHeight) / 2,
+                     frameRight - row.left - ui::Px(16), editHeight, TRUE);
+    }
     MoveWindow(area.left, area.top, area.Width(), row.top - m_gap - area.top, TRUE);
 
     // 옛 그림 지우기: 대화상자 바탕(그룹 상자 안쪽 포함)을 다시 칠하고, 그 위에 그룹 상자 테두리·제목을 다시 그린다.
@@ -201,25 +204,11 @@ void CPartPreview::OnSize(UINT nType, int cx, int cy)
 
 void CPartPreview::EnsureFonts()
 {
-    if (m_font.GetSafeHandle())
+    if (m_fontsReady)
         return;
-    LOGFONT lf = {};
-    CWnd* parent = GetParent();
-    CFont* dialogFont = parent ? parent->GetFont() : nullptr;
-    if (!dialogFont || !dialogFont->GetLogFont(&lf))
-        ::GetObject(::GetStockObject(DEFAULT_GUI_FONT), sizeof(lf), &lf);
-    m_font.CreateFontIndirect(&lf);
-    lf.lfWeight = FW_BOLD;
-    m_boldFont.CreateFontIndirect(&lf);
-
-    // 위 띠 높이 = 굵은 글자 높이 + 위아래 여백
-    CClientDC dc(this);
-    CFont* oldFont = dc.SelectObject(&m_boldFont);
-    TEXTMETRIC tm = {};
-    dc.GetTextMetrics(&tm);
-    dc.SelectObject(oldFont);
-    m_lineHeight = tm.tmHeight;
-    m_titleHeight = tm.tmHeight + 8;
+    m_fontsReady = true;
+    m_titleHeight = ui::PreviewTitleHeight();   // 위 띠(7주차 2차부터 0 = 없음)
+    m_lineHeight = ui::PreviewLineHeight();     // 아래 알림 줄 칸
 }
 
 void CPartPreview::ResetAngles()
@@ -230,10 +219,11 @@ void CPartPreview::ResetAngles()
     m_dirty = true;
 }
 
-void CPartPreview::ShowPart(int node, const CString& title, bool highVoltage)
+void CPartPreview::ShowPart(int node, const CString& number, const CString& name, bool highVoltage)
 {
     m_part = node;
-    m_title = title;
+    m_number = number;
+    m_name = name;
     m_highVoltage = highVoltage;
     ResetAngles();
     m_urgent = true;
@@ -286,7 +276,7 @@ CRect CPartPreview::ImageRect() const
 {
     CRect client;
     GetClientRect(&client);
-    CRect image(client.left + 1, client.top + m_titleHeight, client.right - 1, client.bottom - 1);
+    CRect image(client.left, client.top + m_titleHeight, client.right, client.bottom);
     if (image.bottom < image.top)
         image.bottom = image.top;
     return image;
@@ -331,93 +321,23 @@ void CPartPreview::OnPaint()
         return;
     EnsureFonts();
 
-    // 메모리에 다 그린 뒤 한 번에 내보낸다(깜빡임 방지)
-    CDC dc;
-    dc.CreateCompatibleDC(&paintDc);
-    CBitmap canvas;
-    canvas.CreateCompatibleBitmap(&paintDc, client.Width(), client.Height());
-    CBitmap* oldBitmap = dc.SelectObject(&canvas);
-    CFont* oldFont = dc.SelectObject(&m_boldFont);
-    dc.SetBkMode(TRANSPARENT);
-
-    // 1) 위 띠: 품번 + 이름, 고전압이면 주황 띠 오른쪽에 '고전압'
-    CRect title(client.left, client.top, client.right, client.top + m_titleHeight);
-    dc.FillSolidRect(&title, m_part < 0 ? kTitleIdle : (m_highVoltage ? kTitleHighVoltage : kTitleNormal));
-    dc.SetTextColor(RGB(255, 255, 255));
-    CRect titleText = title;
-    titleText.DeflateRect(8, 0);
-    if (m_part >= 0 && m_highVoltage)
-    {
-        const CString mark(_T("고전압"));
-        dc.DrawText(mark, &titleText, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        titleText.right -= dc.GetTextExtent(mark).cx + 12;
-    }
-    dc.DrawText(m_part >= 0 ? m_title : CString(_T("부품 이미지")), &titleText,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-    dc.SelectObject(&m_font);
-
-    // 2) 그림 칸
-    const CRect image = ImageRect();
-    if (m_part >= 0 && !m_pixels.empty())
-    {
-        BITMAPINFO info = {};
-        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth = m_imageWidth;
-        info.bmiHeader.biHeight = m_imageHeight;   // 양수 = 아래 줄부터(OpenGL 이 읽은 순서 그대로)
-        info.bmiHeader.biPlanes = 1;
-        info.bmiHeader.biBitCount = 32;
-        info.bmiHeader.biCompression = BI_RGB;
-        ::SetStretchBltMode(dc.GetSafeHdc(), COLORONCOLOR);
-        ::StretchDIBits(dc.GetSafeHdc(), image.left, image.top, image.Width(), image.Height(),
-                        0, 0, m_imageWidth, m_imageHeight, m_pixels.data(), &info, DIB_RGB_COLORS, SRCCOPY);
-    }
-    else
-    {
-        dc.FillSolidRect(&image, kIdleBack);
-        if (m_part < 0)
-        {
-            // 가운데에 안내 글 두 줄
-            const CString hint(_T("3D 뷰에서 부품을 클릭하면\n여기에 그 부품만 크게 보여요."));
-            CRect measure(image.left + 12, 0, image.right - 12, 0);
-            dc.DrawText(hint, &measure, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_CALCRECT);
-            const int top = image.top + (image.Height() - measure.Height()) / 2;
-            CRect hintRect(image.left + 12, top, image.right - 12, top + measure.Height());
-            dc.SetTextColor(kIdleText);
-            dc.DrawText(hint, &hintRect, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
-        }
-    }
-
-    // 3) 맨 아래 한 줄: 검색 결과, 없으면 사용법. 둘레를 밝게 둘러 부품 위에 겹쳐도 읽히게 한다.
-    CString line = m_status;
-    if (line.IsEmpty() && m_part >= 0)
-        line = _T("끌어서 돌리기 · 더블클릭 = 처음 각도");
-    if (!line.IsEmpty() && image.Height() > m_lineHeight + 8)
-    {
-        const CRect lineRect(image.left + 8, image.bottom - m_lineHeight - 5, image.right - 8, image.bottom - 3);
-        const UINT format = DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
-        dc.SetTextColor(kHalo);
-        for (int dx = -1; dx <= 1; ++dx)
-        {
-            for (int dy = -1; dy <= 1; ++dy)
-            {
-                if (dx == 0 && dy == 0)
-                    continue;
-                CRect halo = lineRect;
-                halo.OffsetRect(dx, dy);
-                dc.DrawText(line, &halo, format);
-            }
-        }
-        CRect textRect = lineRect;
-        dc.SetTextColor(m_status.IsEmpty() ? kHintText : kStatusText);
-        dc.DrawText(line, &textRect, format);
-    }
-
-    // 4) 테두리
-    dc.Draw3dRect(&client, kBorder, kBorder);
-
-    paintDc.BitBlt(0, 0, client.Width(), client.Height(), &dc, 0, 0, SRCCOPY);
-    dc.SelectObject(oldFont);
-    dc.SelectObject(oldBitmap);
+    // 메모리 그림판에 다 그린 뒤 한 번에 내보낸다(깜빡임 방지). 그리는 방법은 UiTheme.h 의 PaintPreview
+    ui::Canvas canvas;
+    if (!canvas.Create(client.Width(), client.Height(), true, ui::kPanelBg))
+        return;
+    ui::PreviewView view;
+    view.hasPart = m_part >= 0;
+    view.number = static_cast<LPCWSTR>(m_number);
+    view.name = static_cast<LPCWSTR>(m_name);
+    view.highVoltage = m_highVoltage;
+    if (!m_status.IsEmpty())
+        view.line = static_cast<LPCWSTR>(m_status);          // 검색 결과(늘 보인다)
+    else if (m_part >= 0 && (m_mouseOver || m_dragging))
+        view.line = L"끌어서 돌리기 · 더블클릭 = 처음 각도";   // 사용법(마우스가 ③ 위에 있을 때만)
+    view.lineIsResult = !m_status.IsEmpty();
+    const bool hasImage = m_part >= 0 && !m_pixels.empty();
+    ui::PaintPreview(canvas, view, hasImage ? m_pixels.data() : nullptr, m_imageWidth, m_imageHeight);
+    canvas.BlitTo(paintDc.GetSafeHdc(), 0, 0);
 }
 
 void CPartPreview::OnLButtonDown(UINT nFlags, CPoint point)
@@ -433,6 +353,16 @@ void CPartPreview::OnLButtonDown(UINT nFlags, CPoint point)
 
 void CPartPreview::OnMouseMove(UINT nFlags, CPoint point)
 {
+    if (!m_trackingLeave)
+    {
+        TRACKMOUSEEVENT track = { sizeof(track), TME_LEAVE, m_hWnd, 0 };
+        m_trackingLeave = ::TrackMouseEvent(&track) != FALSE;
+    }
+    if (!m_mouseOver)
+    {
+        m_mouseOver = true;   // 사용법 줄을 보인다
+        Invalidate(FALSE);
+    }
     if (m_dragging)
     {
         // 3D 뷰와 같은 방향: 오른쪽으로 끌면 부품이 오른쪽으로 돌고, 아래로 끌면 위에서 내려다본다
@@ -442,6 +372,17 @@ void CPartPreview::OnMouseMove(UINT nFlags, CPoint point)
         m_dirty = true;
     }
     CWnd::OnMouseMove(nFlags, point);
+}
+
+void CPartPreview::OnMouseLeave()
+{
+    m_trackingLeave = false;
+    if (m_mouseOver)
+    {
+        m_mouseOver = false;   // 사용법 줄을 숨긴다(끄는 중이면 OnPaint 가 m_dragging 으로 계속 보인다)
+        Invalidate(FALSE);
+    }
+    CWnd::OnMouseLeave();
 }
 
 void CPartPreview::OnLButtonUp(UINT nFlags, CPoint point)

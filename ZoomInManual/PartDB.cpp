@@ -72,7 +72,8 @@ StockInfo::Status StockInfo::GetStatus() const
 {
     if (stock <= 0)
         return Status::Out;
-    if (stock < safetyStock)
+    // 안전재고까지 내려왔으면 이미 주문할 때 → 같을 때도 '부족'(7주차 2차. 전에는 미만일 때만)
+    if (stock <= safetyStock)
         return Status::Low;
     return Status::Enough;
 }
@@ -110,6 +111,11 @@ bool PartDB::Load(const std::string& partsPath, const std::string& inventoryPath
                 {
                     for (const Json& c : v["cautions"])
                         info.cautions.push_back(Text(c));
+                }
+                if (v.contains("symptoms") && v["symptoms"].is_array())   // 7주차 3차(없어도 된다)
+                {
+                    for (const Json& c : v["symptoms"])
+                        info.symptoms.push_back(Text(c));
                 }
                 const std::string key = info.number;
                 m_parts[key] = std::move(info);
@@ -195,7 +201,11 @@ bool PartDB::Matches(const std::string& nodeName, const std::string& query) cons
     // 찾을 대상: "ev-bm-12s@03 배터리 모듈 배터리" (한글은 UTF-8 그대로 — 부분 문자열로 찾아도 글자가 깨지지 않는다)
     std::string haystack = nodeName;
     if (const PartInfo* info = FindPart(nodeName))
+    {
         haystack += " " + info->name + " " + info->category;
+        for (const std::string& symptom : info->symptoms)   // 7주차 3차: 증상 낱말로도("끽 소리" → 브레이크 패드)
+            haystack += " " + symptom;
+    }
     haystack = LowerAscii(haystack);
 
     bool anyWord = false;

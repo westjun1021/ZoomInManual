@@ -5,6 +5,11 @@
 //     맨 아래 한 줄: 검색 결과(예: '모듈' 10개 중 1번째) 또는 사용법.
 //   - 마우스로 끌면 돌아가고, 더블클릭하면 처음 각도로. 손을 떼고 2.5초 뒤 다시 천천히 돈다.
 //
+// 7주차(UI 다듬기): 어두운 화면(그리기는 UiTheme.h 의 PaintPreview).
+//   CreateInPanel 이 대화상자 전체도 어두운 화면으로 바꾼다(ui::ThemeDialog — 그룹 상자 대신 둥근 패널, 검색 칸·단추, 제목 줄).
+// 7주차 2차: 위 띠(이름·품번·고전압)를 뺐다 — ② 카드 머리와 같은 글이라. 칸 전체가 그림.
+//   맨 아래 사용법 줄('끌어서 돌리기 …')은 마우스가 ③ 위에 있을 때만(검색 결과 줄은 늘). ② 와 ③ 은 한 판으로 이어 그린다.
+//
 // 대화상자에서 쓰는 법(README [2]):
 //   OnInitDialog : m_preview.CreateInPanel(this, IDC_EDIT_SEARCH, IDC_BTN_SEARCH, IDC_TREE_PARTS);
 //                  m_glView.AttachPreview(&m_preview);
@@ -25,7 +30,8 @@ public:
     // 리소스의 원래 자리로 되돌리므로, 그 뒤에 한 번 더 맞춘다(바로 한 번 + 메시지 처리가 끝난 뒤 한 번).
     void Relayout();
 
-    void ShowPart(int node, const CString& title, bool highVoltage);   // node = -1 이면 안내 글
+    // node = -1 이면 안내 글. number = 노드 이름(예: EV-BM-12S@04), name = 이름(예: 배터리 모듈, 없으면 빈 글)
+    void ShowPart(int node, const CString& number, const CString& name, bool highVoltage);
     void SetStatus(const CString& text);                                 // 맨 아래 한 줄. 빈 글 = 사용법
     void Refresh() { m_dirty = true; }                                   // 다시 그려야 할 때(S 키 등)
 
@@ -35,7 +41,7 @@ public:
     float Yaw() const { return m_yaw; }
     float Pitch() const { return m_pitch; }
     CSize ImageSize() const;             // 그림이 들어갈 칸의 픽셀 크기(OpenGL 로 이 크기만큼 그린다)
-    int BottomMargin() const { return m_lineHeight + 8; }   // 그림 칸 맨 아래 글자 줄 높이(부품은 그 위에 그린다)
+    int BottomMargin() const { return m_lineHeight + m_lineHeight / 2; }   // 그림 칸 맨 아래 알림 줄 자리(부품은 그 위에 그린다)
     // OpenGL 이 그린 픽셀(BGRA, 아래 줄부터)을 가져간다(bgra 와 내용을 맞바꾼다 → 복사 없음)
     void TakeImage(std::vector<unsigned char>& bgra, int width, int height);
 
@@ -46,6 +52,7 @@ protected:
     afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
     afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
     afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+    afx_msg void OnMouseLeave();
     afx_msg void OnCaptureChanged(CWnd* pWnd);
     afx_msg void OnSize(UINT nType, int cx, int cy);
     afx_msg LRESULT OnDeferredLayout(WPARAM wParam, LPARAM lParam);
@@ -53,12 +60,13 @@ protected:
 
 private:
     void ApplyLayout();                  // 그룹 상자 자리 → 이미지 창·검색 칸·단추 위치
-    void EnsureFonts();                  // 대화상자 글꼴 + 굵은 글꼴, 위 띠 높이
-    CRect ImageRect() const;             // 창 안에서 그림 칸(위 띠 아래, 테두리 안)
+    void EnsureFonts();                  // 알림 줄 높이(글꼴은 ui::GetFont). 위 띠는 7주차 2차에 없앴다(높이 0)
+    CRect ImageRect() const;             // 창 안에서 그림 칸(지금은 창 전체)
     void ResetAngles();
 
     int m_part = -1;                     // 보여 주는 부품 노드(-1 = 없음)
-    CString m_title;                     // 위 띠 글자: "EV-BM-12S@04  배터리 모듈"
+    CString m_number;                    // 위 띠: 품번(@위치 포함)
+    CString m_name;                      // 위 띠: 이름
     bool m_highVoltage = false;
     CString m_status;                    // 맨 아래 한 줄(검색 결과)
     float m_yaw = 0.0f;
@@ -66,16 +74,17 @@ private:
     bool m_dirty = false;                // 각도·부품이 바뀌어 새 그림이 필요
     bool m_urgent = false;               // 부품이 막 바뀜 → 30fps 제한 없이 바로 그린다
     bool m_dragging = false;
+    bool m_mouseOver = false;            // 마우스가 이 창 위에 있다 → 사용법 줄을 보인다
+    bool m_trackingLeave = false;
     float m_waitSeconds = 0.0f;          // 끌기를 멈춘 뒤 다시 돌기까지 남은 시간
     float m_sinceFrame = 0.0f;           // 마지막 그림 뒤 흐른 시간
     CPoint m_lastPoint;
     std::vector<unsigned char> m_pixels; // 마지막 그림(BGRA, 아래 줄부터)
     int m_imageWidth = 0;
     int m_imageHeight = 0;
-    CFont m_font;
-    CFont m_boldFont;
-    int m_titleHeight = 22;
-    int m_lineHeight = 14;
+    bool m_fontsReady = false;
+    int m_titleHeight = 34;
+    int m_lineHeight = 26;
 
     // 배치(창 크기가 바뀔 때마다 다시 계산)
     HWND m_dialog = nullptr;

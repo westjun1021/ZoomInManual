@@ -16,50 +16,77 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <vector>
 
 namespace
 {
     // 격자: 정점마다 색을 받아 그대로 칠한다(1주차 셰이더).
+    // 7주차 2차: 격자는 가운데에서 멀어질수록 흐려진다(uFade). 배경 판들은 uFade.y = 0 → 그대로.
     const char* kColorVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aColor;
 uniform mat4 uMVP;
 out vec3 vColor;
+out vec2 vGround;   // 격자 판 위 자리(격자 가운데 = 0, 미터)
 void main()
 {
     vColor = aColor;
+    vGround = aPos.xz;
     gl_Position = uMVP * vec4(aPos, 1.0);
 }
 )";
 
     const char* kColorFragmentShader = R"(#version 330 core
 in vec3 vColor;
+in vec2 vGround;
+uniform vec2 uFade;   // 가운데에서 x 부터 흐려져 y 에서 사라진다. y <= 0 이면 흐리지 않는다
 out vec4 FragColor;
 void main()
 {
-    FragColor = vec4(vColor, 1.0);
+    float a = 1.0;
+    if (uFade.y > 0.0)
+        a = 1.0 - smoothstep(uFade.x, uFade.y, length(vGround));
+    FragColor = vec4(vColor, a);
 }
 )";
 
     // 모델: 재질 색 × 텍스처, 카메라 쪽 조명(확산 + 약한 반사광), 양면 조명, 감마 보정
+    // 6주차: 인스턴싱이면(uInstanced) 행렬·법선 행렬·강조를 uniform 대신 인스턴스 속성(3~10)에서 읽는다.
     const char* kLitVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUV;
+layout(location = 3) in mat4 aInstModel;       // 3~6
+layout(location = 7) in mat3 aInstNormal;      // 7~9
+layout(location = 10) in vec4 aInstHighlight;
 uniform mat4 uModel;
 uniform mat3 uNormalMatrix;
+uniform vec4 uHighlight;      // 선택 강조: rgb = 색, a = 세기(0 = 강조 없음)
+uniform bool uInstanced;
+uniform float uInstHighlight; // 인스턴스 강조 세기에 곱할 값
 uniform mat4 uViewProj;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
+flat out vec4 vHighlight;
 void main()
 {
-    vec4 world = uModel * vec4(aPos, 1.0);
+    mat4 model = uModel;
+    mat3 normalMatrix = uNormalMatrix;
+    vec4 highlight = uHighlight;
+    if (uInstanced)
+    {
+        model = aInstModel;
+        normalMatrix = aInstNormal;
+        highlight = vec4(aInstHighlight.rgb, aInstHighlight.a * uInstHighlight);
+    }
+    vec4 world = model * vec4(aPos, 1.0);
     vWorldPos = world.xyz;
-    vNormal = uNormalMatrix * aNormal;
+    vNormal = normalMatrix * aNormal;
     vUV = aUV;
+    vHighlight = highlight;
     gl_Position = uViewProj * world;
 }
 )";
@@ -73,7 +100,7 @@ uniform bool uHasTexture;
 uniform sampler2D uTexture;   // sRGB 텍스처 → 읽으면 선형 값
 uniform vec2 uUvScale;
 uniform float uAlpha;         // 겉껍데기를 흐리게 할 때 < 1
-uniform vec4 uHighlight;      // 선택 강조: rgb = 색, a = 세기(0 = 강조 없음)
+flat in vec4 vHighlight;      // 선택 강조: rgb = 색, a = 세기(0 = 강조 없음)
 uniform vec3 uLightDir;       // 빛이 오는 방향(월드)
 uniform vec3 uEye;
 out vec4 FragColor;
@@ -82,7 +109,7 @@ void main()
     vec4 base = uBaseColor;
     if (uHasTexture)
         base *= texture(uTexture, vUV * uUvScale);
-    base.a *= uAlpha;
+    float alpha = base.a * uAlpha;
     if (base.a < 0.02)
         discard;
 
@@ -94,9 +121,20 @@ void main()
     float diffuse = max(dot(n, l), 0.0);
     float specular = pow(max(dot(n, normalize(l + v)), 0.0), 48.0) * 0.25;
     vec3 color = base.rgb * (0.28 + 0.85 * diffuse) + vec3(specular);
-    if (uHighlight.a > 0.0)
-        color = mix(color, uHighlight.rgb * (0.35 + 0.75 * diffuse), uHighlight.a);   // 음영은 남기고 색만 바꾼다
-    FragColor = vec4(pow(color, vec3(1.0 / 2.2)), base.a);
+    if (vHighlight.a > 0.0)
+        color = mix(color, vHighlight.rgb * (0.35 + 0.75 * diffuse), vHighlight.a);   // 음영은 남기고 색만 바꾼다
+    // 7주차 2차: 흐려진 겉껍데기(차체·커버)는 비스듬히 보이는 가장자리를 덜 투명하게 → 속은 비치고 윤곽은 또렷하다.
+    //   많이 흐려질수록(uAlpha 가 작을수록) 윤곽을 더 살린다. 불투명한 부품(uAlpha = 1)은 그대로.
+    if (uAlpha < 0.999)
+    {
+        float rim = pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
+        float fade = 1.0 - uAlpha;
+        alpha = mix(alpha, max(alpha, base.a * 0.55), rim * fade);
+        color = mix(color, vec3(0.82, 0.87, 0.95), rim * fade * 0.35);
+    }
+    if (alpha < 0.02)
+        discard;
+    FragColor = vec4(pow(color, vec3(1.0 / 2.2)), alpha);
 }
 )";
 
@@ -117,6 +155,28 @@ out vec4 FragColor;
 void main()
 {
     FragColor = vec4(uIdColor, 1.0);
+}
+)";
+
+    // 성능 표시: 글자 그림(텍스처)을 화면 픽셀에 1:1 로 붙인다
+    const char* kOverlayVertexShader = R"(#version 330 core
+layout(location = 0) in vec2 aCorner;   // (0,0) 왼쪽 아래 ~ (1,1) 오른쪽 위
+uniform vec4 uRect;                     // 화면 좌표(-1~1): 왼쪽, 아래, 오른쪽, 위
+out vec2 vUV;
+void main()
+{
+    vUV = vec2(aCorner.x, 1.0 - aCorner.y);   // 그림은 위 줄부터 들어 있다
+    gl_Position = vec4(mix(uRect.xy, uRect.zw, aCorner), 0.0, 1.0);
+}
+)";
+
+    const char* kOverlayFragmentShader = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uImage;
+out vec4 FragColor;
+void main()
+{
+    FragColor = texture(uImage, vUV);
 }
 )";
 
@@ -177,27 +237,34 @@ void main()
 
     // 부품 이미지(화면 ③): 시야각을 좁혀(30°) 원근 왜곡이 적은 '제품 사진' 느낌으로
     constexpr float kImageFovY = 30.0f;
-    // 배경: 위는 밝고 아래로 갈수록 조금 어두운 회색(흰 셀·검은 트레이 모두 잘 보이게)
-    constexpr float kBackdropTop[3] = { 0.95f, 0.96f, 0.97f };
-    constexpr float kBackdropBottom[3] = { 0.74f, 0.77f, 0.81f };
+    // 배경(7주차 어두운 화면): 가운데가 조금 밝은 어두운 회색 → 둘레는 ③ 패널 색에 가깝게(그림 가장자리가 패널에 녹아든다)
+    constexpr float kBackdropCenter[3] = { 0.235f, 0.255f, 0.290f };
+    constexpr float kBackdropEdge[3] = { 0.118f, 0.133f, 0.160f };
+    constexpr int kBackdropSegments = 48;
+    // 3D 뷰 배경: 위가 조금 밝은 그러데이션(어두운 남색 회색)
+    constexpr float kViewTop[3] = { 0.150f, 0.160f, 0.190f };
+    constexpr float kViewBottom[3] = { 0.075f, 0.082f, 0.098f };
 
-    // 바닥 격자: 가로세로 10m, 0.5m 간격(모델 단위가 미터). 가운데 X선은 붉게, Z선은 푸르게.
+    // 바닥 격자: 가로세로 10m, 0.5m 간격(모델 단위가 미터).
+    // 7주차 2차: 가운데 선도 다른 선과 같은 회색(빨강·파랑 축 선은 개발용이라 뺐다), 1m 선만 조금 밝게.
+    //   가장자리는 셰이더가 흐린다(uFade) → 격자 끝의 딱 끊긴 선이 안 보인다.
+    constexpr float kGridHalf = 5.0f;
     std::vector<ColorVertex> MakeGrid()
     {
         std::vector<ColorVertex> v;
-        const float half = 5.0f;
+        const float half = kGridHalf;
         const float step = 0.5f;
         const int count = static_cast<int>(half / step);
         for (int i = -count; i <= count; ++i)
         {
             const float t = static_cast<float>(i) * step;
-            const bool center = (i == 0);
             const bool major = (i % 2 == 0);
-            const float base = major ? 0.36f : 0.27f;
-            v.push_back({ -half, 0.0f, t, center ? 0.85f : base, center ? 0.30f : base, center ? 0.30f : base + 0.05f });
-            v.push_back({  half, 0.0f, t, center ? 0.85f : base, center ? 0.30f : base, center ? 0.30f : base + 0.05f });
-            v.push_back({ t, 0.0f, -half, center ? 0.30f : base, center ? 0.40f : base, center ? 0.90f : base + 0.05f });
-            v.push_back({ t, 0.0f,  half, center ? 0.30f : base, center ? 0.40f : base, center ? 0.90f : base + 0.05f });
+            const float base = major ? 0.30f : 0.22f;
+            const float blue = base + 0.04f;   // 3D 배경(남색 회색)에 맞춰 살짝 푸르게
+            v.push_back({ -half, 0.0f, t, base, base, blue });
+            v.push_back({  half, 0.0f, t, base, base, blue });
+            v.push_back({ t, 0.0f, -half, base, base, blue });
+            v.push_back({ t, 0.0f,  half, base, base, blue });
         }
         return v;
     }
@@ -208,13 +275,22 @@ bool GLRenderer::Init(std::string* log)
     m_colorProgram = BuildProgram(kColorVertexShader, kColorFragmentShader, log);
     m_litProgram = BuildProgram(kLitVertexShader, kLitFragmentShader, log);
     m_idProgram = BuildProgram(kIdVertexShader, kIdFragmentShader, log);
-    if (!m_colorProgram || !m_litProgram || !m_idProgram)
+    m_overlayProgram = BuildProgram(kOverlayVertexShader, kOverlayFragmentShader, log);
+    if (!m_colorProgram || !m_litProgram || !m_idProgram || !m_overlayProgram)
         return false;
+    m_locOverlayRect = glGetUniformLocation(m_overlayProgram, "uRect");
+    glUseProgram(m_overlayProgram);
+    glUniform1i(glGetUniformLocation(m_overlayProgram, "uImage"), 0);
+    glUseProgram(0);
     m_locIdViewProj = glGetUniformLocation(m_idProgram, "uViewProj");
     m_locIdModel = glGetUniformLocation(m_idProgram, "uModel");
     m_locIdColor = glGetUniformLocation(m_idProgram, "uIdColor");
 
     m_locColorMvp = glGetUniformLocation(m_colorProgram, "uMVP");
+    m_locColorFade = glGetUniformLocation(m_colorProgram, "uFade");
+    glUseProgram(m_colorProgram);
+    glUniform2f(m_locColorFade, 0.0f, 0.0f);   // 기본: 흐리지 않는다(배경 판)
+    glUseProgram(0);
     m_locViewProj = glGetUniformLocation(m_litProgram, "uViewProj");
     m_locLightDir = glGetUniformLocation(m_litProgram, "uLightDir");
     m_locEye = glGetUniformLocation(m_litProgram, "uEye");
@@ -225,9 +301,25 @@ bool GLRenderer::Init(std::string* log)
     m_modelUniforms.uvScale = glGetUniformLocation(m_litProgram, "uUvScale");
     m_modelUniforms.alpha = glGetUniformLocation(m_litProgram, "uAlpha");
     m_modelUniforms.highlight = glGetUniformLocation(m_litProgram, "uHighlight");
+    m_modelUniforms.instanced = glGetUniformLocation(m_litProgram, "uInstanced");
+    m_modelUniforms.instHighlight = glGetUniformLocation(m_litProgram, "uInstHighlight");
     glUseProgram(m_litProgram);
     glUniform1i(glGetUniformLocation(m_litProgram, "uTexture"), 0);
+    glUniform1i(m_modelUniforms.instanced, 0);
+    glUniform1f(m_modelUniforms.instHighlight, 1.0f);
     glUseProgram(0);
+
+    // 성능 표시용 사각형(꼭짓점 4개)과 텍스처
+    const float corners[8] = { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
+    glGenVertexArrays(1, &m_overlayVao);
+    glGenBuffers(1, &m_overlayVbo);
+    glBindVertexArray(m_overlayVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_overlayVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(corners), corners, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0));
+    glBindVertexArray(0);
+    glGenQueries(kTimerSlots, m_timerQueries);
 
     const std::vector<ColorVertex> grid = MakeGrid();
     m_gridVertexCount = static_cast<int>(grid.size());
@@ -242,23 +334,37 @@ bool GLRenderer::Init(std::string* log)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(ColorVertex), reinterpret_cast<void*>(3 * sizeof(float)));
     glBindVertexArray(0);
 
-    // 부품 이미지 배경: 화면 전체를 덮는 사각형(좌표가 곧 화면 좌표 -1~1), 위아래 색이 다르다
-    const ColorVertex backdrop[4] = {
-        { -1.0f, -1.0f, 0.0f, kBackdropBottom[0], kBackdropBottom[1], kBackdropBottom[2] },
-        {  1.0f, -1.0f, 0.0f, kBackdropBottom[0], kBackdropBottom[1], kBackdropBottom[2] },
-        { -1.0f,  1.0f, 0.0f, kBackdropTop[0], kBackdropTop[1], kBackdropTop[2] },
-        {  1.0f,  1.0f, 0.0f, kBackdropTop[0], kBackdropTop[1], kBackdropTop[2] },
+    // 부품 이미지 배경: 가운데 한 점(밝게) + 둘레 원(어둡게)의 부채꼴. 원은 화면 모서리까지 덮는 크기(좌표 = 화면 -1~1)
+    std::vector<ColorVertex> fan;
+    fan.push_back({ 0.0f, 0.1f, 0.0f, kBackdropCenter[0], kBackdropCenter[1], kBackdropCenter[2] });
+    for (int i = 0; i <= kBackdropSegments; ++i)
+    {
+        const float a = 6.2831853f * static_cast<float>(i) / static_cast<float>(kBackdropSegments);
+        fan.push_back({ 1.5f * std::cos(a), 0.1f + 1.5f * std::sin(a), 0.0f, kBackdropEdge[0], kBackdropEdge[1], kBackdropEdge[2] });
+    }
+    m_backdropVertices = static_cast<int>(fan.size());
+    auto makeColorVao = [](const ColorVertex* vertices, size_t count, unsigned int* vao, unsigned int* vbo) {
+        glGenVertexArrays(1, vao);
+        glGenBuffers(1, vbo);
+        glBindVertexArray(*vao);
+        glBindBuffer(GL_ARRAY_BUFFER, *vbo);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(count * sizeof(ColorVertex)), vertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(ColorVertex), reinterpret_cast<void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(ColorVertex), reinterpret_cast<void*>(3 * sizeof(float)));
+        glBindVertexArray(0);
     };
-    glGenVertexArrays(1, &m_backdropVao);
-    glGenBuffers(1, &m_backdropVbo);
-    glBindVertexArray(m_backdropVao);
-    glBindBuffer(GL_ARRAY_BUFFER, m_backdropVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(backdrop), backdrop, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(ColorVertex), reinterpret_cast<void*>(0));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(ColorVertex), reinterpret_cast<void*>(3 * sizeof(float)));
-    glBindVertexArray(0);
+    makeColorVao(fan.data(), fan.size(), &m_backdropVao, &m_backdropVbo);
+
+    // 3D 뷰 배경: 화면 전체 사각형, 위아래 색만 다르다
+    const ColorVertex view[4] = {
+        { -1.0f, -1.0f, 0.0f, kViewBottom[0], kViewBottom[1], kViewBottom[2] },
+        {  1.0f, -1.0f, 0.0f, kViewBottom[0], kViewBottom[1], kViewBottom[2] },
+        { -1.0f,  1.0f, 0.0f, kViewTop[0], kViewTop[1], kViewTop[2] },
+        {  1.0f,  1.0f, 0.0f, kViewTop[0], kViewTop[1], kViewTop[2] },
+    };
+    makeColorVao(view, 4, &m_viewBackdropVao, &m_viewBackdropVbo);
 
     m_camera.Fit(glm::vec3(0.0f), 2.5f);   // 모델이 없을 때 기본 시점
     glEnable(GL_DEPTH_TEST);
@@ -290,6 +396,27 @@ void GLRenderer::Shutdown()
     if (m_imageResolveColor) glDeleteRenderbuffers(1, &m_imageResolveColor);
     if (m_backdropVbo)       glDeleteBuffers(1, &m_backdropVbo);
     if (m_backdropVao)       glDeleteVertexArrays(1, &m_backdropVao);
+    if (m_viewBackdropVbo)   glDeleteBuffers(1, &m_viewBackdropVbo);
+    if (m_viewBackdropVao)   glDeleteVertexArrays(1, &m_viewBackdropVao);
+    if (m_overlayProgram)    glDeleteProgram(m_overlayProgram);
+    if (m_overlayVbo)        glDeleteBuffers(1, &m_overlayVbo);
+    if (m_overlayVao)        glDeleteVertexArrays(1, &m_overlayVao);
+    for (OverlayLayer& layer : m_layers)
+    {
+        if (layer.texture)
+            glDeleteTextures(1, &layer.texture);
+        layer = OverlayLayer();
+    }
+    if (m_timerQueries[0])   glDeleteQueries(kTimerSlots, m_timerQueries);
+    m_overlayProgram = m_overlayVbo = m_overlayVao = 0;
+    m_viewBackdropVbo = m_viewBackdropVao = 0;
+    m_backdropVertices = 0;
+    for (int i = 0; i < kTimerSlots; ++i)
+    {
+        m_timerQueries[i] = 0;
+        m_timerPending[i] = false;
+    }
+    m_timerActive = false;
     m_gridVbo = m_gridVao = m_colorProgram = m_litProgram = m_idProgram = 0;
     m_pickFbo = m_pickColor = m_pickDepth = 0;
     m_pickWidth = m_pickHeight = 0;
@@ -523,6 +650,20 @@ void GLRenderer::FlyToSelection()
     m_camera.FlyTo((node.boundsMin + node.boundsMax) * 0.5f, glm::length(node.boundsMax - node.boundsMin) * 0.5f);
 }
 
+void GLRenderer::FlyInto(int partNode)
+{
+    const SemanticZoom::PartView* view = m_zoom.Find(partNode);
+    const std::vector<Model::Node>& nodes = m_model.Nodes();
+    if (!view || partNode < 0 || partNode >= static_cast<int>(nodes.size()) || !nodes[partNode].hasBounds)
+        return;
+    const Model::Node& node = nodes[partNode];
+    const glm::vec3 center = (node.boundsMin + node.boundsMax) * 0.5f;
+    const float radius = glm::length(node.boundsMax - node.boundsMin) * 0.5f;
+    // 부품이 화면을 채우는 거리(더블클릭과 같다)와, 그 부품이 펼쳐지는 거리의 85% 중 가까운 쪽
+    const float fill = radius / std::sin(glm::radians(m_camera.FovYDegrees()) * 0.5f) * 1.2f;
+    m_camera.FlyToDistance(center, std::min(fill, view->openDistance * 0.85f));
+}
+
 bool GLRenderer::EnsureImageTarget(int width, int height)
 {
     if (m_imageFbo && m_imageWidth == width && m_imageHeight == height)
@@ -588,16 +729,16 @@ bool GLRenderer::RenderPartImage(int partNode, int width, int height, float yawD
     glDisable(GL_CULL_FACE);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);   // F 키(와이어프레임)와 상관없이 면으로
     glDepthMask(GL_TRUE);
-    glClearColor(kBackdropBottom[0], kBackdropBottom[1], kBackdropBottom[2], 1.0f);
+    glClearColor(kBackdropEdge[0], kBackdropEdge[1], kBackdropEdge[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // 1) 배경 그러데이션(깊이는 안 쓴다)
+    // 1) 배경: 가운데가 밝은 부채꼴(깊이는 안 쓴다). 가로세로 비율대로 늘여 둥근 빛이 칸 모양을 따른다
     const glm::mat4 identity(1.0f);
     glDisable(GL_DEPTH_TEST);
     glUseProgram(m_colorProgram);
     glUniformMatrix4fv(m_locColorMvp, 1, GL_FALSE, glm::value_ptr(identity));
     glBindVertexArray(m_backdropVao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, m_backdropVertices);
     glEnable(GL_DEPTH_TEST);
 
     // 2) 카메라 거리: 부품이 세로축으로 한 바퀴 돌며 쓸고 지나가는 원기둥
@@ -683,29 +824,47 @@ bool GLRenderer::RenderPartImage(int partNode, int width, int height, float yawD
 void GLRenderer::Render()
 {
     glViewport(0, 0, m_width, m_height);
-    glClearColor(0.12f, 0.12f, 0.15f, 1.0f);
+    glClearColor(kViewBottom[0], kViewBottom[1], kViewBottom[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);   // 양면 재질이 많아서 뒷면도 그린다
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    // 0) 배경 그러데이션(깊이는 안 쓴다 — 커서 줌·클릭과 상관없다)
+    {
+        const glm::mat4 identity(1.0f);
+        glDisable(GL_DEPTH_TEST);
+        glUseProgram(m_colorProgram);
+        glUniformMatrix4fv(m_locColorMvp, 1, GL_FALSE, glm::value_ptr(identity));
+        glBindVertexArray(m_viewBackdropVao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
 
     const glm::mat4 viewProj = ViewProj();
     const glm::vec3 eye = m_camera.Eye();
 
     // 1) 바닥 격자: 모델 바로 아래(바퀴가 닿는 높이).
     //    깊이는 남기지 않는다 → 커서 줌이 바닥을 잡지 않는다(모델이 나중에 그려지므로 가려지는 것은 그대로).
+    //    7주차 2차: 모델 둘레 밖으로 갈수록 흐려진다(모델 반지름 ~ 격자 끝).
     if (m_showGrid)
     {
         const glm::vec3 c = m_model.Loaded() ? m_model.Center() : glm::vec3(0.0f);
         const float groundY = m_model.Loaded() ? m_model.BoundsMin().y - 0.002f : -1.0f;
         const glm::mat4 gridModel = glm::translate(glm::mat4(1.0f), glm::vec3(c.x, groundY, c.z));
         const glm::mat4 mvp = viewProj * gridModel;
+        const float fadeStart = std::min(std::max(m_model.Loaded() ? m_model.Radius() : 2.0f, 1.0f), kGridHalf * 0.7f);
         glUseProgram(m_colorProgram);
         glUniformMatrix4fv(m_locColorMvp, 1, GL_FALSE, glm::value_ptr(mvp));
+        glUniform2f(m_locColorFade, fadeStart, kGridHalf);
         glBindVertexArray(m_gridVao);
         glDepthMask(GL_FALSE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDrawArrays(GL_LINES, 0, m_gridVertexCount);
+        glDisable(GL_BLEND);
+        glUniform2f(m_locColorFade, 0.0f, 0.0f);
         glDepthMask(GL_TRUE);
     }
 
@@ -722,6 +881,7 @@ void GLRenderer::Render()
         glUniform3fv(m_locEye, 1, glm::value_ptr(eye));
         glPolygonMode(GL_FRONT_AND_BACK, m_wireframe ? GL_LINE : GL_FILL);
 
+        m_model.ResetDrawCalls();
         m_model.Draw(m_modelUniforms, false, eye);
 
         // 반투명 재질(Ioniq 차체 텍스처의 유리창, 12V 배터리 속 물)과 흐려진 겉껍데기는 마지막에 섞어 그린다.
@@ -732,12 +892,167 @@ void GLRenderer::Render()
         if (!m_wireframe)
             m_model.DrawHighlightGhost(m_modelUniforms);
         glDisable(GL_BLEND);
+        m_lastDrawCalls = m_model.DrawCalls();
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
+    // 3) 2D 판들(위치 경로·상태·성능·안내·이름표). 번호 순서대로 위에 쌓는다.
+    //    깊이는 건드리지 않는다(커서 줌이 깊이를 읽는다). 그림 픽셀 = 화면 픽셀(1:1).
+    if (m_overlayVisible)
+    {
+        bool begun = false;
+        for (const OverlayLayer& layer : m_layers)
+        {
+            if (!layer.visible || !layer.texture || layer.width <= 0 || layer.height <= 0)
+                continue;
+            if (!begun)
+            {
+                glDisable(GL_DEPTH_TEST);
+                glDepthMask(GL_FALSE);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+                glUseProgram(m_overlayProgram);
+                glActiveTexture(GL_TEXTURE0);
+                glBindVertexArray(m_overlayVao);
+                begun = true;
+            }
+            const float x0 = -1.0f + 2.0f * static_cast<float>(layer.x) / static_cast<float>(m_width);
+            const float x1 = -1.0f + 2.0f * static_cast<float>(layer.x + layer.width) / static_cast<float>(m_width);
+            const float y1 = 1.0f - 2.0f * static_cast<float>(layer.y) / static_cast<float>(m_height);
+            const float y0 = 1.0f - 2.0f * static_cast<float>(layer.y + layer.height) / static_cast<float>(m_height);
+            glUniform4f(m_locOverlayRect, x0, y0, x1, y1);
+            glBindTexture(GL_TEXTURE_2D, layer.texture);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        }
+        if (begun)
+        {
+            glDisable(GL_BLEND);
+            glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
+        }
+    }
+
     glBindVertexArray(0);
     glUseProgram(0);
+}
+
+void GLRenderer::SetOverlayImage(int index, const unsigned char* bgra, int width, int height)
+{
+    if (index < 0 || index >= kOverlayLayers)
+        return;
+    OverlayLayer& layer = m_layers[index];
+    if (!bgra || width <= 0 || height <= 0)
+    {
+        layer.width = layer.height = 0;
+        return;
+    }
+    if (!layer.texture)
+    {
+        glGenTextures(1, &layer.texture);
+        glBindTexture(GL_TEXTURE_2D, layer.texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);   // 글자가 흐려지지 않게 픽셀 그대로
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glBindTexture(GL_TEXTURE_2D, layer.texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, bgra);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    layer.width = width;
+    layer.height = height;
+}
+
+void GLRenderer::PlaceOverlay(int index, int x, int y, bool visible)
+{
+    if (index < 0 || index >= kOverlayLayers)
+        return;
+    m_layers[index].x = x;
+    m_layers[index].y = y;
+    m_layers[index].visible = visible;
+}
+
+void GLRenderer::CollectGpuTimers()
+{
+    for (int i = 0; i < kTimerSlots; ++i)
+    {
+        if (!m_timerPending[i])
+            continue;
+        GLint ready = 0;
+        glGetQueryObjectiv(m_timerQueries[i], GL_QUERY_RESULT_AVAILABLE, &ready);
+        if (!ready)
+            continue;
+        GLuint64 nanoseconds = 0;
+        glGetQueryObjectui64v(m_timerQueries[i], GL_QUERY_RESULT, &nanoseconds);
+        m_timerPending[i] = false;
+        const float ms = static_cast<float>(static_cast<double>(nanoseconds) / 1.0e6);
+        m_gpuMs = m_gpuMsValid ? m_gpuMs * 0.9f + ms * 0.1f : ms;   // 출렁이지 않게 평균
+        m_gpuMsValid = true;
+    }
+}
+
+void GLRenderer::BeginGpuTimer()
+{
+    if (!m_timerQueries[0] || m_timerActive)
+        return;
+    CollectGpuTimers();
+    if (m_timerPending[m_timerNext])
+        return;   // 결과를 아직 못 받은 질의는 다시 쓰지 않는다(이번 프레임은 재지 않음)
+    glBeginQuery(GL_TIME_ELAPSED, m_timerQueries[m_timerNext]);
+    m_timerActive = true;
+}
+
+void GLRenderer::EndGpuTimer()
+{
+    if (!m_timerActive)
+        return;
+    glEndQuery(GL_TIME_ELAPSED);
+    m_timerPending[m_timerNext] = true;
+    m_timerNext = (m_timerNext + 1) % kTimerSlots;
+    m_timerActive = false;
+}
+
+GLRenderer::FrameTiming GLRenderer::MeasureFrames(bool instanced, double seconds, int maxFrames)
+{
+    FrameTiming result;
+    result.instanced = instanced;
+    if (!m_model.Loaded())
+        return result;
+    const bool savedInstancing = m_model.Instancing();
+    const bool savedOverlay = m_overlayVisible;
+    m_model.SetInstancing(instanced);
+    m_overlayVisible = false;
+
+    for (int i = 0; i < 3; ++i)   // 준비 운동(드라이버가 상태를 만들고 버퍼를 올리게)
+        Render();
+    glFinish();
+
+    using Clock = std::chrono::steady_clock;
+    const Clock::time_point start = Clock::now();
+    double elapsed = 0.0;
+    int frames = 0;
+    do
+    {
+        Render();
+        glFinish();   // GPU 가 이 장을 다 그릴 때까지 기다린다 → 한 장의 실제 시간
+        ++frames;
+        elapsed = std::chrono::duration<double>(Clock::now() - start).count();
+    } while ((elapsed < seconds && frames < maxFrames) || frames < 10);
+
+    result.frames = frames;
+    result.msPerFrame = elapsed * 1000.0 / static_cast<double>(frames);
+    result.drawCalls = m_lastDrawCalls;
+    m_model.SetInstancing(savedInstancing);
+    m_overlayVisible = savedOverlay;
+    return result;
+}
+
+std::string GLRenderer::GpuName() const
+{
+    const GLubyte* s = glGetString(GL_RENDERER);
+    return s ? std::string(reinterpret_cast<const char*>(s)) : std::string("?");
 }
 
 std::string GLRenderer::GlInfo() const

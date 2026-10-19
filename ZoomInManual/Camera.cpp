@@ -102,6 +102,13 @@ void Camera::FlyTo(const glm::vec3& center, float radius)
                             m_radius * 0.05f, m_fitDistance * 4.0f);
 }
 
+void Camera::FlyToDistance(const glm::vec3& center, float distance)
+{
+    m_smoothSeconds = kFlySmooth;
+    m_goal.target = center;
+    m_goal.distance = Clamp(distance, m_radius * 0.05f, m_fitDistance * 4.0f);
+}
+
 void Camera::Update(float dtSeconds)
 {
     // 목표점과 거리를 같은 비율로 따라가게 해야 커서 아래 점이 움직이는 동안에도 제자리에 있다.

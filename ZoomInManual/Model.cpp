@@ -32,6 +32,11 @@
 
 namespace
 {
+    // 인스턴스 한 개의 데이터(float 개수): 월드 행렬 16 + 법선 행렬 9 + 강조(rgb, 세기) 4
+    constexpr int kInstanceFloats = 29;
+    constexpr int kHighlightOffset = 25;
+    constexpr GLuint kInstanceAttrib = 3;   // 꼭짓점 속성 3~6 행렬, 7~9 법선 행렬, 10 강조
+
     glm::mat4 ToGlm(const aiMatrix4x4& m)
     {
         // aiMatrix4x4 는 행 우선, GLM 은 열 우선 → 전치
@@ -365,7 +370,9 @@ bool Model::Load(const std::string& path, std::string* error)
     m_shellOwners.assign(owners.begin(), owners.end());
     m_shellAlpha.assign(m_nodes.size(), 1.0f);
     m_highlighted.assign(m_nodes.size(), 0);
+    m_hovered.assign(m_nodes.size(), 0);
     m_highlightNode = -1;
+    BuildInstances();   // 6주차: 같은 메쉬를 쓰는 노드를 묶는다
     m_stats.uniqueMeshes = static_cast<int>(usedMeshes.size());
     m_stats.textures = static_cast<int>(m_textures.size());
     m_stats.loadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -383,6 +390,19 @@ void Model::Release()
         if (mesh.vbo) glDeleteBuffers(1, &mesh.vbo);
         if (mesh.vao) glDeleteVertexArrays(1, &mesh.vao);
     }
+    for (InstanceGroup& g : m_groups)
+    {
+        if (g.vao) glDeleteVertexArrays(1, &g.vao);
+    }
+    if (m_instanceVbo)
+        glDeleteBuffers(1, &m_instanceVbo);
+    m_instanceVbo = 0;
+    m_groups.clear();
+    m_instanceNodes.clear();
+    m_meshGrouped.clear();
+    m_nodeAllGrouped.clear();
+    m_instanceData.clear();
+    m_instanceDirty = false;
     if (!m_textures.empty())
         glDeleteTextures(static_cast<GLsizei>(m_textures.size()), m_textures.data());
     m_nodes.clear();
@@ -398,6 +418,9 @@ void Model::Release()
     m_shellAlpha.clear();
     m_highlighted.clear();
     m_highlightNode = -1;
+    m_hovered.clear();
+    m_hoverNode = -1;
+    m_tint.clear();
     m_partIndex.clear();
     m_stats = Stats();
 }
@@ -407,16 +430,241 @@ void Model::SetHighlight(int partNode, const glm::vec3& color)
     m_highlightNode = (partNode >= 0 && partNode < static_cast<int>(m_nodes.size())) ? partNode : -1;
     m_highlightColor = color;
     std::fill(m_highlighted.begin(), m_highlighted.end(), static_cast<char>(0));
-    if (m_highlightNode < 0)
-        return;
-    // 부모가 항상 자식보다 앞에 있으므로, 앞에서부터 '부모가 강조면 나도 강조'로 한 번 훑으면 된다.
-    m_highlighted[m_highlightNode] = 1;
-    for (int i = m_highlightNode + 1; i < static_cast<int>(m_nodes.size()); ++i)
+    if (m_highlightNode >= 0)
     {
-        const int parent = m_nodes[i].parent;
-        if (parent >= 0 && m_highlighted[parent])
-            m_highlighted[i] = 1;
+        // 부모가 항상 자식보다 앞에 있으므로, 앞에서부터 '부모가 강조면 나도 강조'로 한 번 훑으면 된다.
+        m_highlighted[m_highlightNode] = 1;
+        for (int i = m_highlightNode + 1; i < static_cast<int>(m_nodes.size()); ++i)
+        {
+            const int parent = m_nodes[i].parent;
+            if (parent >= 0 && m_highlighted[parent])
+                m_highlighted[i] = 1;
+        }
     }
+    WriteHighlights();   // 인스턴스 데이터에도(그릴 때 GPU 로 한 번에 올린다)
+}
+
+void Model::SetHover(int partNode)
+{
+    const int node = (partNode >= 0 && partNode < static_cast<int>(m_nodes.size())) ? partNode : -1;
+    if (node == m_hoverNode)
+        return;
+    m_hoverNode = node;
+    std::fill(m_hovered.begin(), m_hovered.end(), static_cast<char>(0));
+    if (m_hoverNode >= 0)
+    {
+        m_hovered[m_hoverNode] = 1;
+        for (int i = m_hoverNode + 1; i < static_cast<int>(m_nodes.size()); ++i)
+        {
+            const int parent = m_nodes[i].parent;
+            if (parent >= 0 && m_hovered[parent])
+                m_hovered[i] = 1;
+        }
+    }
+    WriteHighlights();
+}
+
+void Model::SetTints(const std::vector<glm::vec4>& tints)
+{
+    if (tints.size() == m_nodes.size())
+        m_tint = tints;
+    else
+        m_tint.clear();   // 크기가 다르면(빈 배열 포함) 색 없음
+    WriteHighlights();    // 인스턴싱 묶음에도
+}
+
+glm::vec4 Model::NodeHighlight(int nodeIndex) const
+{
+    if (!m_highlighted.empty() && m_highlighted[nodeIndex])
+        return glm::vec4(m_highlightColor, 0.65f);                 // 선택(DrawHighlightGhost·인스턴스와 같은 세기)
+    const glm::vec4 tint = m_tint.empty() ? glm::vec4(0.0f) : m_tint[nodeIndex];
+    if (!m_hovered.empty() && m_hovered[nodeIndex])
+    {
+        if (tint.a > 0.0f)   // 보기 모드 색이 있는 부품: 그 색을 조금 밝고 진하게
+            return glm::vec4(glm::mix(glm::vec3(tint), glm::vec3(1.0f), 0.35f), std::min(tint.a + 0.12f, 0.8f));
+        return glm::vec4(1.0f, 1.0f, 1.0f, 0.22f);                  // 마우스: 흰빛으로 살짝
+    }
+    if (tint.a > 0.0f)
+        return tint;                                                 // 보기 모드 색
+    return glm::vec4(m_highlightColor, 0.0f);
+}
+
+void Model::BuildInstances()
+{
+    // 1) 메쉬마다 그 메쉬를 쓰는 노드(겉껍데기·반투명 재질 제외). m_drawNodes 가 번호 순이라 노드 번호 순으로 모인다.
+    std::vector<std::vector<int>> users(m_meshes.size());
+    for (int nodeIndex : m_drawNodes)
+    {
+        const Node& node = m_nodes[nodeIndex];
+        if (node.isShell)
+            continue;
+        for (int mi : node.meshes)
+        {
+            const Mesh& mesh = m_meshes[mi];
+            if (mesh.indexCount > 0 && !m_materials[mesh.material].blend)
+                users[mi].push_back(nodeIndex);
+        }
+    }
+
+    // 2) 두 노드 이상이 쓰는 메쉬 = 묶음 하나(= 그리기 한 번)
+    m_meshGrouped.assign(m_meshes.size(), 0);
+    for (size_t mi = 0; mi < m_meshes.size(); ++mi)
+    {
+        if (users[mi].size() < 2)
+            continue;
+        InstanceGroup g;
+        g.mesh = static_cast<int>(mi);
+        g.first = static_cast<int>(m_instanceNodes.size());
+        g.count = static_cast<int>(users[mi].size());
+        g.boundFirst = g.first;
+        m_instanceNodes.insert(m_instanceNodes.end(), users[mi].begin(), users[mi].end());
+        m_groups.push_back(g);
+        m_meshGrouped[mi] = 1;
+    }
+    m_stats.instanceGroups = static_cast<int>(m_groups.size());
+    m_stats.instancedUses = static_cast<int>(m_instanceNodes.size());
+
+    // 3) 메쉬가 모두 묶음으로 그려지는 노드(인스턴싱 켰을 때 따로 그릴 것이 없다)
+    m_nodeAllGrouped.assign(m_nodes.size(), 0);
+    for (int nodeIndex : m_drawNodes)
+    {
+        const Node& node = m_nodes[nodeIndex];
+        bool all = !node.isShell;
+        for (int mi : node.meshes)
+        {
+            if (m_meshes[mi].indexCount > 0 && !m_meshGrouped[mi])
+                all = false;
+        }
+        m_nodeAllGrouped[nodeIndex] = all ? 1 : 0;
+    }
+    if (m_groups.empty())
+        return;
+
+    // 4) 인스턴스 데이터: 노드의 월드 행렬·법선 행렬(바뀌지 않음) + 강조(선택할 때마다 바뀜)
+    m_instanceData.assign(m_instanceNodes.size() * kInstanceFloats, 0.0f);
+    for (size_t k = 0; k < m_instanceNodes.size(); ++k)
+    {
+        float* out = &m_instanceData[k * kInstanceFloats];
+        const int nodeIndex = m_instanceNodes[k];
+        std::memcpy(out, glm::value_ptr(m_nodes[nodeIndex].world), 16 * sizeof(float));
+        std::memcpy(out + 16, glm::value_ptr(m_normalMatrices[nodeIndex]), 9 * sizeof(float));
+    }
+    WriteHighlights();
+    glGenBuffers(1, &m_instanceVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_instanceVbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_instanceData.size() * sizeof(float)), m_instanceData.data(), GL_DYNAMIC_DRAW);
+    m_instanceDirty = false;
+
+    // 5) 묶음마다 VAO: 메쉬의 꼭짓점·인덱스 + 인스턴스 버퍼(속성 3~10, 인스턴스마다 한 칸씩 = divisor 1)
+    const GLsizei stride = 8 * sizeof(float);
+    for (InstanceGroup& g : m_groups)
+    {
+        const Mesh& mesh = m_meshes[g.mesh];
+        glGenVertexArrays(1, &g.vao);
+        glBindVertexArray(g.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(3 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(6 * sizeof(float)));
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+        glBindBuffer(GL_ARRAY_BUFFER, m_instanceVbo);
+        for (GLuint loc = kInstanceAttrib; loc <= kInstanceAttrib + 7; ++loc)
+        {
+            glEnableVertexAttribArray(loc);
+            glVertexAttribDivisor(loc, 1);
+        }
+        PointInstanceAttributes(g.first);
+    }
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Model::WriteHighlights()
+{
+    if (m_instanceData.empty())
+        return;
+    for (size_t k = 0; k < m_instanceNodes.size(); ++k)
+    {
+        float* h = &m_instanceData[k * kInstanceFloats + kHighlightOffset];
+        const glm::vec4 value = NodeHighlight(m_instanceNodes[k]);   // DrawNodeWith 와 같은 값
+        h[0] = value.r;
+        h[1] = value.g;
+        h[2] = value.b;
+        h[3] = value.a;
+    }
+    m_instanceDirty = true;
+}
+
+void Model::PointInstanceAttributes(int firstInstance) const
+{
+    // GL_ARRAY_BUFFER 에 인스턴스 버퍼가, 그 묶음의 VAO 가 연결된 상태에서 부른다.
+    const GLsizei stride = kInstanceFloats * sizeof(float);
+    const size_t base = static_cast<size_t>(firstInstance) * static_cast<size_t>(stride);
+    for (GLuint c = 0; c < 4; ++c)   // 행렬: 열 4개
+        glVertexAttribPointer(kInstanceAttrib + c, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(base + c * 4 * sizeof(float)));
+    for (GLuint c = 0; c < 3; ++c)   // 법선 행렬: 열 3개
+        glVertexAttribPointer(kInstanceAttrib + 4 + c, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(base + (16 + c * 3) * sizeof(float)));
+    glVertexAttribPointer(kInstanceAttrib + 7, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(base + kHighlightOffset * sizeof(float)));
+}
+
+void Model::DrawGroups(const DrawUniforms& u, int nodeBegin, int nodeEnd, GroupMode mode) const
+{
+    if (!m_instancing || m_groups.empty() || nodeBegin >= nodeEnd)
+        return;
+    glBindBuffer(GL_ARRAY_BUFFER, m_instanceVbo);
+    if (m_instanceDirty)
+    {
+        glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(m_instanceData.size() * sizeof(float)), m_instanceData.data());
+        m_instanceDirty = false;
+    }
+    glUniform1i(u.instanced, 1);
+    // 엑스레이는 강조 세기 0.65 를 1 로(= DrawHighlightGhost 와 같은 색), ③ 그림은 강조 없음
+    glUniform1f(u.instHighlight, mode == GroupMode::NoHighlight ? 0.0f : (mode == GroupMode::Ghost ? 1.0f / 0.65f : 1.0f));
+    glUniform1f(u.alpha, mode == GroupMode::Ghost ? 0.30f : 1.0f);
+    if (mode == GroupMode::Ghost)
+    {
+        const glm::vec4 white(1.0f);
+        glUniform4fv(u.baseColor, 1, glm::value_ptr(white));
+        glUniform1i(u.hasTexture, 0);
+    }
+
+    for (const InstanceGroup& g : m_groups)
+    {
+        // 이 묶음 안에서 노드 번호가 [nodeBegin, nodeEnd) 인 인스턴스(번호 순이라 이어져 있다)
+        const auto groupBegin = m_instanceNodes.begin() + g.first;
+        const auto groupEnd = groupBegin + g.count;
+        const auto lo = std::lower_bound(groupBegin, groupEnd, nodeBegin);
+        const auto hi = std::lower_bound(lo, groupEnd, nodeEnd);
+        const int count = static_cast<int>(hi - lo);
+        if (count <= 0)
+            continue;
+        const Mesh& mesh = m_meshes[g.mesh];
+        if (mode != GroupMode::Ghost)
+        {
+            const Material& mat = m_materials[mesh.material];
+            glUniform4fv(u.baseColor, 1, glm::value_ptr(mat.baseColor));
+            glUniform1i(u.hasTexture, mat.texture ? 1 : 0);
+            glUniform2fv(u.uvScale, 1, glm::value_ptr(mat.uvScale));
+            if (mat.texture)
+            {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, mat.texture);
+            }
+        }
+        glBindVertexArray(g.vao);
+        const int first = static_cast<int>(lo - m_instanceNodes.begin());
+        if (first != g.boundFirst)
+        {
+            PointInstanceAttributes(first);   // 일부만 그릴 때(③ 그림·엑스레이): 그 시작 위치로
+            g.boundFirst = first;
+        }
+        glDrawElementsInstanced(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr, count);
+        ++m_drawCalls;
+    }
+    glUniform1i(u.instanced, 0);
 }
 
 bool Model::UnderClosedShell(int partNode) const
@@ -456,12 +704,15 @@ void Model::DrawHighlightGhost(const DrawUniforms& u) const
         for (int mi : m_nodes[nodeIndex].meshes)
         {
             const Mesh& mesh = m_meshes[mi];
-            if (mesh.indexCount == 0)
+            if (mesh.indexCount == 0 || Grouped(nodeIndex, mi))
                 continue;
             glBindVertexArray(mesh.vao);
             glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
+            ++m_drawCalls;
         }
     }
+    // 묶음(인스턴싱)에 들어간 메쉬: 고른 부품 아래(노드 번호 구간)만 한 번에
+    DrawGroups(u, m_highlightNode, m_subtreeEnd[m_highlightNode], GroupMode::Ghost);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
 }
@@ -523,7 +774,12 @@ void Model::Draw(const DrawUniforms& u, bool transparentPass, const glm::vec3& e
     if (!transparentPass)
     {
         for (int nodeIndex : m_drawNodes)
+        {
+            if (m_instancing && m_nodeAllGrouped[nodeIndex])
+                continue;   // 이 노드의 메쉬는 모두 아래 묶음이 그린다
             DrawNode(nodeIndex, u, false);
+        }
+        DrawGroups(u, 0, static_cast<int>(m_nodes.size()), GroupMode::Normal);
         return;
     }
 
@@ -567,7 +823,12 @@ void Model::DrawPart(const DrawUniforms& u, int partNode, bool transparentPass, 
     if (!transparentPass)
     {
         for (auto it = first; it != last; ++it)
+        {
+            if (m_instancing && m_nodeAllGrouped[*it])
+                continue;
             DrawNodeWith(*it, u, false, alphaOf(*it), false);
+        }
+        DrawGroups(u, partNode, m_subtreeEnd[partNode], GroupMode::NoHighlight);   // 강조색 없이
         return;
     }
 
@@ -594,11 +855,10 @@ void Model::DrawPart(const DrawUniforms& u, int partNode, bool transparentPass, 
 
 void Model::DrawNode(int nodeIndex, const DrawUniforms& u, bool transparentPass) const
 {
-    const bool lit = !m_highlighted.empty() && m_highlighted[nodeIndex];
-    DrawNodeWith(nodeIndex, u, transparentPass, NodeAlpha(nodeIndex), lit);
+    DrawNodeWith(nodeIndex, u, transparentPass, NodeAlpha(nodeIndex), true);
 }
 
-void Model::DrawNodeWith(int nodeIndex, const DrawUniforms& u, bool transparentPass, float alpha, bool lit) const
+void Model::DrawNodeWith(int nodeIndex, const DrawUniforms& u, bool transparentPass, float alpha, bool useHighlight) const
 {
     const Node& node = m_nodes[nodeIndex];
     const bool fadeThis = alpha < 0.999f;
@@ -611,13 +871,16 @@ void Model::DrawNodeWith(int nodeIndex, const DrawUniforms& u, bool transparentP
         const Material& mat = m_materials[mesh.material];
         if ((fadeThis || mat.blend) != transparentPass)
             continue;
+        if (Grouped(nodeIndex, mi))
+            continue;   // 인스턴싱 묶음이 그린다
 
         if (!matricesSet)
         {
             glUniformMatrix4fv(u.model, 1, GL_FALSE, glm::value_ptr(node.world));
             glUniformMatrix3fv(u.normalMatrix, 1, GL_FALSE, glm::value_ptr(m_normalMatrices[nodeIndex]));
             glUniform1f(u.alpha, alpha);
-            glUniform4f(u.highlight, m_highlightColor.r, m_highlightColor.g, m_highlightColor.b, lit ? 0.65f : 0.0f);
+            const glm::vec4 h = useHighlight ? NodeHighlight(nodeIndex) : glm::vec4(m_highlightColor, 0.0f);
+            glUniform4f(u.highlight, h.r, h.g, h.b, h.a);
             matricesSet = true;
         }
         glUniform4fv(u.baseColor, 1, glm::value_ptr(mat.baseColor));
@@ -630,5 +893,6 @@ void Model::DrawNodeWith(int nodeIndex, const DrawUniforms& u, bool transparentP
         }
         glBindVertexArray(mesh.vao);
         glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
+        ++m_drawCalls;
     }
 }

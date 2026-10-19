@@ -22,6 +22,8 @@ public:
     void ZoomAt(int wheelDelta, const glm::vec3& pivot);
     // 가운데 center, 반지름 radius 인 부품이 화면을 채우도록 보는 방향은 그대로 두고 다가간다.
     void FlyTo(const glm::vec3& center, float radius);
+    // 7주차: center 를 보며 거리 distance 까지(보는 방향 그대로, FlyTo 와 같은 빠르기)
+    void FlyToDistance(const glm::vec3& center, float distance);
 
     void Update(float dtSeconds);                   // 매 프레임: 지금 값 → 가려는 값
     void Snap();                                    // 애니메이션 없이 바로 가려는 값으로
